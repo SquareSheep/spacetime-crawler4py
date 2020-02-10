@@ -3,6 +3,8 @@ from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 import lxml.etree
 import io
+from lxml.html.clean import Cleaner
+from simhash import Simhash
 
 """
 *.ics.uci.edu/*
@@ -19,6 +21,11 @@ TODO:
 """
 rp = RobotFileParser()
 robotFiles = dict()
+hashes = set()
+# cleaner = Cleaner()
+# cleaner.javascript = True # This is True because we want to activate the javascript filter
+# cleaner.style = True
+# cleaner.links = False
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -31,24 +38,60 @@ def extract_next_links(url, resp):
     listoflinks = []
     if resp:
         if not resp.raw_response == None:
-            if resp.status >= 200 and resp.status <= 399: #or resp.status >= 500 and resp.status <= 599:
+            if resp.status >= 200 and resp.status <= 599:
+                if resp.status == 404:
+                    return list()
                 try:
                     parser = lxml.etree.HTMLParser(encoding='UTF-8')
                     tree = lxml.etree.parse(io.StringIO(resp.raw_response.content.decode(encoding='UTF-8')),parser)
-
+                    tagCounter = 0
+                    wordCounter = 0
+                    #build_text_list = lxml.etree.XPath("//text()")
+                    #pageText = build_text_list(tree)
+                    #pageText = " ".join(pageText)
+                    #pageText = pageText.split()
+                    #print(cleaner.clean_html(tree))
+                    #document = lxml.html.document_fromstring(resp.raw_response.content)
+                    #print(cleaner.clean_html(document.text_content()))
+                    pageString = ""
+                    #etree.strip_elements(tree,'script')
+                    wantedTags = {"p","h1","h2","h3","h4","h5","h6","li","ul","title","b","strong","em","i","small","sub","sup","ins","del","mark","pre"}
+                    #etree.strip_tags(fragment, 'a', 'p')
                     for elem in tree.iter():
+                        if elem.tag in wantedTags:
+                            if elem.text:
+                                wordCounter += len(elem.text.split())
+                                pageString += elem.text
+                        tagCounter += 1
                         if elem.tag == "a" and "href" in elem.attrib: 
                             link = elem.attrib["href"]
                             if link[0:4] == r"http":
-                                listoflinks.append(link)
+                                pass
                             if link[0:2] == r"//":
-                                listoflinks.append("https:" + link)
+                                link = "https:" + link
                             elif link[0] == r"/":
                                 parsed = urlparse(url)
-                                listoflinks.append(parsed.netloc + link)
-                except:
-                    pass
-    return listoflinks
+                                link = parsed.netloc + link
+                            link = link.split('#')[0]
+                            link = link.split('?')[0]
+                            listoflinks.append(link)
+                    print(tagCounter)
+                    print(wordCounter)
+                    pageHash = Simhash(pageString)
+                    #minDist = 100000000000000000
+                    for hashObject in hashes:
+                        if pageHash.distance(hashObject) < 5:
+                            print("AAAAAAAAAAAAa")
+                            return list()
+                            #minDist = pageHash.distance(hashObject)
+                    #print("DIST: " + str(minDist))
+                    hashes.add(pageHash)
+                    if wordCounter < 100:
+                        return list()
+                    return listoflinks
+                except Exception as e:
+                    print(e)
+    return list()
 
 def is_valid(url):
     try:
