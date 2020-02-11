@@ -7,6 +7,10 @@ from queue import Queue, Empty
 from utils import get_logger, get_urlhash, normalize
 from scraper import is_valid
 
+from urllib.parse import urlparse
+
+uniqueSubdomains = dict()
+
 class Frontier(object):
     def __init__(self, config, restart):
         self.logger = get_logger("FRONTIER")
@@ -60,6 +64,16 @@ class Frontier(object):
             self.save[urlhash] = (url, False)
             self.save.sync()
             self.to_be_downloaded.append(url)
+
+            # Increment subdomain list thing
+            parsed = urlparse(url)
+            if not parsed.netloc in uniqueSubdomains:
+                uniqueSubdomains[parsed.netloc] = 1
+                print(parsed.netloc + " " + str(uniqueSubdomains[parsed.netloc]))
+            else:
+                uniqueSubdomains[parsed.netloc] += 1
+                print(parsed.netloc + " " + str(uniqueSubdomains[parsed.netloc]))
+
     
     def mark_url_complete(self, url):
         urlhash = get_urlhash(url)

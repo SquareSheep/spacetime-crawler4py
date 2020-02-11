@@ -5,6 +5,11 @@ from utils import get_logger
 from scraper import scraper
 import time
 
+from urllib.parse import urlparse
+from urllib.robotparser import RobotFileParser
+
+robotFiles = dict()
+
 
 class Worker(Thread):
     def __init__(self, worker_id, config, frontier):
@@ -19,6 +24,19 @@ class Worker(Thread):
             if not tbd_url:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
                 break
+
+            try:
+                parsed = urlparse(tbd_url)
+                if not parsed.netloc in robotFiles:
+                    rp = RobotFileParser()
+                    rp.set_url(r"https://"+parsed.netloc+r"/robots.txt")
+                    rp.read()
+                    robotFiles[parsed.netloc] = rp
+                if not robotFiles[parsed.netloc].can_fetch("*", url):
+                    continue
+            except:
+                pass
+
             resp = download(tbd_url, self.config, self.logger)
             self.logger.info(
                 f"Downloaded {tbd_url}, status <{resp.status}>, "
@@ -28,3 +46,5 @@ class Worker(Thread):
                 self.frontier.add_url(scraped_url)
             self.frontier.mark_url_complete(tbd_url)
             time.sleep(self.config.time_delay)
+
+        # Print all the stuff, 1-4
