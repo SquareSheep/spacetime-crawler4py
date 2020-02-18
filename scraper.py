@@ -19,84 +19,122 @@ longestPageWordCount = 0
 
 totalWordDict = dict()
 
+def get_longest_page_URL():
+    return longestPageURL
+
+def get_longest_page_word_count():
+    return longestPageWordCount
+
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     validlinks = [link for link in links if is_valid(link)]
     return validlinks
 
 def extract_next_links(url, resp):
+    # If the raw_response exists, and the status is within 200 to 599, and is not 404 or 403,
+    # then process the raw_response.content
     if resp:
         if not resp.raw_response == None:
             if resp.status >= 200 and resp.status <= 599:
-                if resp.status == 404:
+                if resp.status == 404 or resp.status == 403:
                     return list()
                 try:
+                    # Get the HTML content and make it into a tree with lxml
                     parser = lxml.etree.HTMLParser(encoding='UTF-8')
                     tree = lxml.etree.parse(io.StringIO(resp.raw_response.content.decode(encoding='UTF-8')),parser)
-                    listoflinks = []
-                    currentPageWordCount = 0
 
-                    pageText = ""
+                    # String of all the text on the page
+                    pageTextString = ""
 
-                    wantedTags = {"p","h1","h2","h3","h4","h5","h6","li","ul","title","b","strong","em","i","small","sub","sup","ins","del","mark","pre"}
+                    # Check these tags for text
+                    wantedTags = {"p","span","blockquote","code","br","a","ol","ins","sub","sup","h1","h2","h3","h4","h5","h6","li","ul","title","b","strong","em","i","small","sub","sup","ins","del","mark","pre"}
 
+                    parsed = urlparse(url)
+                    
+                    listofLinks = []
                     for elem in tree.iter():
+
                         if elem.tag in wantedTags:
                             if elem.text:
-                                currentPageWordCount += len(elem.text.split())
-                                pageText += elem.text
+                                pageTextString += elem.text + " "
 
                         if elem.tag == "a" and "href" in elem.attrib: 
                             link = elem.attrib["href"]
-
-                            if link[0:2] == r"//":
-                                link = "https:" + link
+                            if len(link) == 0:
+                                continue
+                            if link == r"/" or link == parsed.netloc:
+                                continue
                             elif link[0] == r"/":
-                                parsed = urlparse(url)
                                 link = parsed.netloc + link
+                            elif link[0:2] == r"//":
+                                link = "https:" + link
 
                             link = link.split('#')[0]
-                            listoflinks.append(link)
+                            if "replytocom=" in link or "share=" in link:
+                                link = link.split('?')[0]
+                            listofLinks.append(link)
 
-                    print(currentPageWordCount)
-
-                    pageHash = Simhash(pageText)
-
+                    # If the distance between this page's hash and any other page
+                    # is less than 3, return an empty list because this page is
+                    # too similar to another page to be useful
+                    pageHash = Simhash(pageTextString)
                     minDist = 100000000000
-
                     for hashedPage in hashes:
                         if pageHash.distance(hashedPage) < minDist:
                             minDist = pageHash.distance(hashedPage)
-                        if pageHash.distance(hashedPage) < 3:
+                        if pageHash.distance(hashedPage) <= 3:
                             return list()
+                    hashes.add(pageHash)
                     print(minDist)
 
-                    hashes.add(pageHash)
+                    # Tokenize the page and put the resulting list in pageListofWords
+                    pageListofWords = []
+                    currWord = ""
+                    for char in pageTextString:
+                        try:
+                            charOrd = ord(char)
+                            if (charOrd >= 64 and charOrd <= 90):
+                                currWord += char.lower()
+                            elif (charOrd >= 48 and charOrd <= 57) or (charOrd >= 97 and charOrd <= 122):
+                                currWord += char
+                            else:
+                                if currWord != "":
+                                    if not currWord in stopWords and len(currWord) > 1:
+                                        pageListofWords.append(currWord)
+                                    currWord = ""
+                        except:
+                            continue
 
-                    if currentPageWordCount < 100:
-                        return list()
+                    # If the number of words is less than 150, return an empty list
+                    # because this page is not useful enough
+                    pageWordCount = len(pageListofWords)
+                    if pageWordCount < 150:
+                        return list()  
 
+                    # If this page has more words than the current longest page,
+                    # set this page as the new longest page
                     global longestPageWordCount
                     global longestPageURL
-                    if currentPageWordCount > longestPageWordCount:
-                        longestPageWordCount = currentPageWordCount
+                    if pageWordCount > longestPageWordCount:
+                        longestPageWordCount = pageWordCount
                         longestPageURL = url
-                        print("New longest URL: " + url + " " + str(longestPageWordCount))
+                        print("New longest page: " + url + " " + str(longestPageWordCount))
 
-                    currentPageListofWords = pageText.split()
-                    for word in currentPageListofWords:
+                    # Increase word counters by their occurrences on this page
+                    for word in pageListofWords:
                         if word not in stopWords:
                             if word not in totalWordDict:
                                 totalWordDict[word] = 1
                             else:
                                 totalWordDict[word] += 1
 
+                    return listofLinks
 
-
-                    return listoflinks
-
+                # Prints an exception if the page has non-UTF-8 characters
                 except Exception as e:
                     print(e)
+
+    # There was no response, or no content, or a bad resp_status
     return list()
 
 def is_valid(url):
@@ -118,12 +156,15 @@ def is_valid(url):
 
         flag = False
 
-        for i in validURLs:
-            if i in url:
+        # If this page is not in one of the validURLs, return false
+        for baseURL in validURLs:
+            if baseURL in parsed.netloc:
                 flag = True
         if not flag:
             return False
 
+        # Read the robots.txt for this url
+        # Return false if we're not allowed to crawl this url
         try:
             if not parsed.netloc in robotFiles:
                 rp = RobotFileParser()
@@ -134,6 +175,7 @@ def is_valid(url):
                 return False
         except:
             pass
+
         return True
 
     except TypeError:

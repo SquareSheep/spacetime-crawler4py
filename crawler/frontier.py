@@ -9,8 +9,6 @@ from scraper import is_valid
 
 from urllib.parse import urlparse
 
-uniqueSubdomains = dict()
-
 class Frontier(object):
     def __init__(self, config, restart):
         self.logger = get_logger("FRONTIER")
@@ -65,14 +63,10 @@ class Frontier(object):
             self.save.sync()
             self.to_be_downloaded.append(url)
 
-            # Increment subdomain list thing
-            parsed = urlparse(url)
-            if not parsed.netloc in uniqueSubdomains:
-                uniqueSubdomains[parsed.netloc] = 1
-                print(parsed.netloc + " " + str(uniqueSubdomains[parsed.netloc]))
-            else:
-                uniqueSubdomains[parsed.netloc] += 1
-                print(parsed.netloc + " " + str(uniqueSubdomains[parsed.netloc]))
+            # If the url hasn't been appended before, return true
+            # Used in worker.py to count the number of unique pages
+            return True
+        return False
 
     
     def mark_url_complete(self, url):
